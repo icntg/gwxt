@@ -32,7 +32,6 @@ const HEADERS = {
 
 class UI {
     static ButtonId = "ui-btn-start";
-    static DivNotifyId = "ui-div-notify";
 
     static addStartButton(clickFunction) {
         // const ButtonId = "ui-btn-start"
@@ -58,57 +57,22 @@ class UI {
             link.addEventListener("click", clickFunction, false);
         }
     }
-
-    static addMessageNotifier() {
-        const divWrapper = document.createElement('div');
-        divWrapper.style.position = "absolute";
-        divWrapper.style.top = "50%";
-        divWrapper.style.left = "50%";
-
-        const div = document.createElement('div');
-        div.setAttribute("id", UI.DivNotifyId);
-        const width = 800;
-        const height = 120;
-        div.style.display = "none";
-        div.style.position = "absolute";
-        div.style.width = `${width}px`;
-        div.style.height = `${height}px`;
-        div.style.left = `-${width/2}px`;
-        div.style.top = `-${height/2}px`;
-        div.style.zIndex = "9999";
-        div.style.border = "solid 2px red";
-        div.style.lineHeight = `${height}px`;
-        div.style.textAlign = "center";
-        div.style.backgroundColor = "AliceBlue";
-        div.style.fontSize = "30px";
-        div.innerText = "";
-
-        divWrapper.appendChild(div);
-        document.body.appendChild(divWrapper);
-    }
-
-    static notify(text) {
-        function hidden() {
-            const div = document.getElementById(UI.DivNotifyId);
-            div.style.display = "none";
-        }
-        const div = document.getElementById(UI.DivNotifyId);
-        if (!div) {
-            UI.addMessageNotifier();
-        }
-        div.innerText = text;
-        div.style.display = "block";
-        setTimeout(hidden, 500);
-    }
 }
 
 (async function () {
     'use strict';
 
-    let userCode = "";
-    let lessons = [];
-
     async function startLearning() {
+        const userCode = await getUserCode();
+        const lessons = getLessonList();
+        if (!lessons || lessons.length <= 0) {
+            GM_notification(
+                text = "没有找到可以学习的课程！",
+                title = "error",
+                timeout = 0,
+            );
+            throw new Error("getLessonList");
+        }
         GM_log(userCode);
         GM_log(lessons);
         // alert(userCode);
@@ -116,7 +80,11 @@ class UI {
         for (let i = 0; i < lessons.length; i++) {
             const lesson = lessons[i];
             await studyLesson(userCode, lesson.id, lesson.name);
-            UI.notify(`《${lesson.name}》学习完成！`);
+            GM_notification(
+                text = `《${lesson.name}》学习完成！`,
+                title = "done",
+                timeout = 500,
+            );
         }
     }
 
@@ -132,7 +100,7 @@ class UI {
                         resolve(xhr.response);
                     },
                     onerror(_) {
-                        alert("getUserCode error!");
+                        GM_notification(text = "getUserCode error!");
                         throw new Error("getUserCode");
                     },
                 });
@@ -259,8 +227,5 @@ class UI {
         GM_log(`${lessonName} end`);
     }
 
-    userCode = await getUserCode();
-    lessons = getLessonList();
-    UI.addMessageNotifier();
     UI.addStartButton(startLearning);
 })();
