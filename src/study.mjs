@@ -14,6 +14,7 @@
 // @grant GM_log
 // @grant GM_xmlhttpRequest
 // @grant GM_notification
+// @grant GM_registerMenuCommand
 // @grant unsafeWindow
 // @grant window.close
 // @grant window.focus
@@ -262,6 +263,7 @@ class UI {
 
     userCode = await getUserCode();
     lessons = getLessonList();
+    GM_registerMenuCommand("自动学习", startLearning);
     UI.addMessageNotifier();
     UI.addStartButton(startLearning);
 })();
