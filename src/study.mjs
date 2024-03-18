@@ -62,6 +62,10 @@ class UI {
     }
 
     static addMessageNotifier() {
+        const checker = document.getElementById(UI.DivNotifyId);
+        if (checker) {
+            return;
+        }
         const divWrapper = document.createElement('div');
         divWrapper.style.position = "absolute";
         divWrapper.style.top = "50%";
@@ -75,8 +79,8 @@ class UI {
         div.style.position = "absolute";
         div.style.width = `${width}px`;
         div.style.height = `${height}px`;
-        div.style.left = `-${width/2}px`;
-        div.style.top = `-${height/2}px`;
+        div.style.left = `-${width / 2}px`;
+        div.style.top = `-${height / 2}px`;
         div.style.zIndex = "9999";
         div.style.border = "solid 2px red";
         div.style.lineHeight = `${height}px`;
@@ -89,7 +93,7 @@ class UI {
         document.body.appendChild(divWrapper);
     }
 
-    static notify(text) {
+    static notify(text, timeout = 500) {
         function hidden() {
             const div = document.getElementById(UI.DivNotifyId);
             div.style.display = "none";
@@ -100,7 +104,9 @@ class UI {
         }
         div.innerText = text;
         div.style.display = "block";
-        setTimeout(hidden, 500);
+        if (timeout > 0) {
+            setTimeout(hidden, timeout);
+        }
     }
 }
 
@@ -118,7 +124,7 @@ class UI {
         for (let i = 0; i < lessons.length; i++) {
             const lesson = lessons[i];
             await studyLesson(userCode, lesson.id, lesson.name);
-            UI.notify(`《${lesson.name}》学习完成！`);
+            UI.notify(`《${lesson.name}》学习完成！`, 5 * 60 * 1000);
         }
     }
 
