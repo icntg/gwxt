@@ -22,6 +22,8 @@
 // ==/UserScript==
 
 
+const MAX_RETRIES = 15;
+
 const HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
     "Accept-Encoding": "gzip, deflate",
@@ -31,6 +33,8 @@ const HEADERS = {
     "Upgrade-Insecure-Reuqests": "1",
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36",
 };
+
+const sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay));
 
 class UI {
     static ButtonId = "ui-btn-start";
@@ -113,19 +117,30 @@ class UI {
 (async function () {
     'use strict';
 
-    let userCode = "";
-    let lessons = [];
-
     async function startLearning() {
+        const lessons = getLessonList();
+        if (!lessons || lessons.length <= 0) {
+            alert("没有可学习的课程！");
+            throw new Error("no lesson");
+        }
+        const userCode = await getUserCode();
+        if (!userCode) {
+            alert("获取UserCode失败！");
+            throw new Error("no userCode");
+        }
         GM_log(userCode);
         GM_log(lessons);
         // alert(userCode);
         // alert(lessons.join(", "));
         for (let i = 0; i < lessons.length; i++) {
             const lesson = lessons[i];
+            if (lesson.percentage === "100%") {
+                continue;
+            }
             await studyLesson(userCode, lesson.id, lesson.name);
-            UI.notify(`《${lesson.name}》学习完成！`, 5 * 60 * 1000);
+            UI.notify(`《${lesson.name}》学习完成！`, 500);
         }
+        UI.notify(`页面全部课程学习完成！请刷新页面检查结果！`, 5 * 60 * 1000);
     }
 
     async function getUserCode() {
@@ -137,7 +152,8 @@ class UI {
                     method: "POST",
                     headers: HEADERS,
                     onload: function (xhr) {
-                        resolve(xhr.response);
+                        // 注意，此处响应包中没有 Content-Type，因此直接使用 response 并不会按照 json 进行解析。
+                        resolve(xhr.responseText);
                     },
                     onerror(_) {
                         alert("getUserCode error!");
@@ -146,130 +162,190 @@ class UI {
                 });
             })
         })();
-        const userCode = ret.userCode;
+        const userCode = JSON.parse(ret).userCode;
         return userCode;
     }
 
     function getLessonList() {
-        // todo 加上课程名字
-        const links = $('a[href^="javascript:_enterCourse"]');
-        const names = $();
         const buffer = [];
-        for (let i = 0; i < links.length; i++) {
-            const h = links[i].href;
+        const trs = $('a[href^="javascript:_enterCourse"]').parent().parent()
+        trs.each((idx, tr) => {
+            const name = tr.children[1].children[0].innerText;
+            const percentage = tr.children[6].children[1].innerText;
+            const h = tr.children[7].children[0].href;
             const i0 = h.indexOf("'");
             const i1 = h.indexOf("'", i0 + 1);
-            const lessonId = h.slice(i0 + 1, i1);
-            const lessonName = names[i];
+            const id = h.slice(i0 + 1, i1);
             buffer.push({
-                id: lessonId,
-                name: lessonName,
+                id: id,
+                name: name,
+                percentage: percentage,
             });
-        };
+        });
         return buffer;
+    }
+
+    async function retry(asyncFunc) {
+        for (let count = 0; count < MAX_RETRIES; count++) {
+            try {
+                const ret = await asyncFunc();
+                if (0 === ret) {
+                    break;
+                }
+            } catch (err) {
+                console.error(`[${count}] ${err}`);
+            }
+        }
     }
 
     async function studyLesson(userCode, lessonId, lessonName) {
         GM_log(`${lessonName} start ...`);
-        {
+        debugger;
+
+        // 选课，非必要
+        await retry(async () => {
             const url = "http://gwxt.sgcc.com.cn/www/command/XYxkzxControl?flag=chooseLesson_sysc";
             const ret = await (async () => new Promise((resolve, _) =>
                 GM_xmlhttpRequest({
                     url: url,
                     method: "POST",
                     headers: HEADERS,
-                    data: { "leid": lessonId, "category": "1", "seled": "1" },
-                    onload: (xhr) => resolve(xhr),
-                    onerror() { throw new Error(url); },
+                    data: JSON.stringify({ "leid": lessonId, "category": "1", "seled": "1" }),
+                    onload(xhr) { resolve(xhr); },
+                    onerror(err) { throw new Error(`${url} ${err}`); },
                 })
             ))();
-            GM_log(ret.status);
-        }
+            const info = `${ret.status} ${url}`;
+            GM_log(info);
+            console.log(info);
+            if (ret.status === 200 || ret.status === 302) {
+                return 0;
+            }
+            return ret.status;
+        });
+        sleep(500);
 
-        {
+        await retry(async () => {
             const url = `http://gwxt.sgcc.com.cn/www/command/XYxkzxControl?flag=lessonNumCheck&lessonId=${lessonId}`;
             const ret = await (async () => new Promise((resolve, _) =>
                 GM_xmlhttpRequest({
                     url: url,
                     method: "POST",
                     headers: HEADERS,
-                    onload: (xhr) => resolve(xhr),
-                    onerror() { throw new Error(url); },
+                    onload(xhr) { resolve(xhr); },
+                    onerror(err) { throw new Error(`${url} ${err}`); },
                 })
             ))();
-            GM_log(ret.status);
-        }
+            const info = `${ret.status} ${url}`;
+            GM_log(info);
+            console.log(info);
+            if (ret.status === 200 || ret.status === 302) {
+                return 0;
+            }
+            return ret.status;
+        });
+        sleep(500);
 
-        {
+        await retry(async () => {
             const url = "http://gwxt.sgcc.com.cn/www/command/XYxkzxControl?flag=getIfDafen";
             const ret = await (async () => new Promise((resolve, _) =>
                 GM_xmlhttpRequest({
                     url: url,
                     method: "POST",
                     headers: HEADERS,
-                    data: { "leid": lessonId },
-                    onload: (xhr) => resolve(xhr),
-                    onerror() { throw new Error(url); },
+                    data: JSON.stringify({ "leid": lessonId }),
+                    onload(xhr) { resolve(xhr); },
+                    onerror(err) { throw new Error(`${url} ${err}`); },
                 })
             ))();
-            GM_log(ret.status);
-        }
+            const info = `${ret.status} ${url}`;
+            GM_log(info);
+            console.log(info);
+            if (ret.status === 200 || ret.status === 302) {
+                return 0;
+            }
+            return ret.status;
+        });
+        sleep(500);
 
-        {
+        await retry(async () => {
             const url = `http://gwxt.sgcc.com.cn/www/command/LessonAction?flag=study&le_id=${lessonId}&type=4&preview=1&lessontype=1&source=&version=Google`;
             const ret = await (async () => new Promise((resolve, _) =>
                 GM_xmlhttpRequest({
                     url: url,
                     method: "GET",
                     headers: HEADERS,
-                    onload: (xhr) => resolve(xhr),
-                    onerror() { throw new Error(url); },
+                    onload(xhr) { resolve(xhr); },
+                    onerror(err) { throw new Error(`${url} ${err}`); },
                 })
             ))();
-            GM_log(ret.status);
-        }
+            const info = `${ret.status} ${url}`;
+            GM_log(info);
+            console.log(info);
+            if (ret.status === 200 || ret.status === 302) {
+                return 0;
+            }
+            return ret.status;
+        });
+        sleep(500);
 
-        {
+        await retry(async () => {
             const url = `http://gwxt.sgcc.com.cn/www/jsp/normalCourse/playCourse.jsp?le_id=${lessonId}&preview=1&us_id=${userCode}&source=&ifEnableDrag=true&ifEnablePopup=false`;
             const ret = await (async () => new Promise((resolve, _) =>
                 GM_xmlhttpRequest({
                     url: url,
                     method: "GET",
                     headers: HEADERS,
-                    onload: (xhr) => resolve(xhr),
-                    onerror() { throw new Error(url); },
+                    onload(xhr) { resolve(xhr); },
+                    onerror(err) { throw new Error(`${url} ${err}`); },
                 })
             ))();
-            GM_log(ret.status);
-        }
+            const info = `${ret.status} ${url}`;
+            GM_log(info);
+            console.log(info);
+            if (ret.status === 200 || ret.status === 302) {
+                return 0;
+            }
+            return ret.status;
+        });
+        sleep(500);
 
-        {
+        await retry(async () => {
             const url = "http://gwxt.sgcc.com.cn:80/www/command/LessonAction";
             const ret = await (async () => new Promise((resolve, _) =>
                 GM_xmlhttpRequest({
                     url: url,
                     method: "POST",
                     headers: HEADERS,
-                    data: {
+                    data: JSON.stringify({
                         "flag": "updateNormalStudyInfo",
                         "percentNum": "100",
                         "leid": lessonId,
                         "userCode": userCode,
                         "preview": "1",
                         "source": ""
-                    },
-                    onload: (xhr) => resolve(xhr),
-                    onerror() { throw new Error(url); },
+                    }),
+                    onload(xhr) { resolve(xhr); },
+                    onerror(err) { throw new Error(`${url} ${err}`); },
                 })
             ))();
-            GM_log(ret.status);
-        }
+            const info = `${ret.status} ${url}`;
+            GM_log(info);
+            console.log(info);
+            if (ret.status === 200 || ret.status === 302) {
+                return 0;
+            }
+            return ret.status;
+        });
+
         GM_log(`${lessonName} end`);
+        sleep(500);
     }
 
-    userCode = await getUserCode();
-    lessons = getLessonList();
-    GM_registerMenuCommand("自动学习", startLearning);
-    UI.addMessageNotifier();
-    UI.addStartButton(startLearning);
+    const _lessons = getLessonList();
+    if (_lessons && _lessons.length > 0) {
+        GM_registerMenuCommand("自动学习", startLearning);
+        UI.addMessageNotifier();
+        UI.addStartButton(startLearning);
+    }
 })();
